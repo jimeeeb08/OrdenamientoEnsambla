@@ -1,25 +1,8 @@
 #include "interfaz.h"
+#include "integracion.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-// Botones de control (vacios por ahora)
-static void onAnterior(GtkButton *btn, gpointer user_data) {
-    g_print("Anterior\n");
-}
-
-static void onPausa(GtkButton *btn, gpointer user_data) {
-    g_print("Pausa\n");
-}
-
-static void onPlay(GtkButton *btn, gpointer user_data) {
-    g_print("Reproducir\n");
-}
-
-static void onSig(GtkButton *btn, gpointer user_data) {
-    g_print("Siguiente\n");
-}
-
 
 // Estructura privada para contener el estado de la aplicación ui
 typedef struct {
@@ -29,7 +12,8 @@ typedef struct {
     GtkWidget *combo;
     int pasoActual;
     int pasosTotales;
-    int *steps_buffer;
+    guint timer_id;           // ID del timer para la reproducción automática
+    gboolean reproduciendo;   // Flag para saber si está reproduciendo
     Proceso proceso; 
 } DatosProyecto;
 
@@ -141,6 +125,9 @@ void cargarLista(GtkButton *button, gpointer user_data)
     procesoInicializar(&datos->proceso, datos->arreglo.tam);
     procesoAgregarPaso(&datos->proceso, datos->arreglo.datos);
 
+    // Reiniciar estado
+    datos->pasoActual = 0;
+    datos->pasosTotales = 1;
 
     g_print("Arreglo cargado (%d elementos): ", datos->arreglo.tam);
     for (int i = 0; i < datos->arreglo.tam; i++)
@@ -150,10 +137,177 @@ void cargarLista(GtkButton *button, gpointer user_data)
     gtk_widget_queue_draw(datos->drawing_area);
 }
 
+// Ejecutar el algoritmo de ordenamiento seleccionado
+void ejecutarOrdenamiento(GtkButton *button, gpointer user_data)
+{
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+
+    if (!datos->arreglo.datos || datos->arreglo.tam == 0) {
+        g_print("Error: Primero debes cargar una lista\n");
+        return;
+    }
+
+    // Obtener algoritmo seleccionado
+    int algoritmo = gtk_combo_box_get_active(GTK_COMBO_BOX(datos->combo));
+    
+    int *buffer = NULL;
+    int pasos_totales = 0;
+    
+    // Hacer una copia del arreglo original para ordenar
+    int *arreglo_copia = malloc(sizeof(int) * datos->arreglo.tam);
+    memcpy(arreglo_copia, datos->arreglo.datos, sizeof(int) * datos->arreglo.tam);
+    
+    // Ejecutar el algoritmo seleccionado
+    if (algoritmo == 0) {  // Burbuja
+        g_print("Ejecutando Bubble Sort...\n");
+        burbujaOrd(arreglo_copia, datos->arreglo.tam, &buffer, &pasos_totales);
+    } else {  // Selección
+        g_print("Ejecutando Selection Sort...\n");
+        seleccionOrd(arreglo_copia, datos->arreglo.tam, &buffer, &pasos_totales);
+    }
+    
+    g_print("Ordenamiento completado: %d pasos generados\n", pasos_totales);
+    
+    // Limpiar proceso anterior
+    procesoLiberar(&datos->proceso);
+    procesoInicializar(&datos->proceso, datos->arreglo.tam);
+    
+    // Convertir buffer a pasos del proceso
+    for (int i = 0; i < pasos_totales; i++) {
+        procesoAgregarPaso(&datos->proceso, buffer + (i * datos->arreglo.tam));
+    }
+    
+    // Liberar memoria
+    free(buffer);
+    free(arreglo_copia);
+    
+    // Reiniciar a paso 0
+    datos->pasoActual = 0;
+    datos->pasosTotales = pasos_totales;
+    
+    // Actualizar visualización con el primer paso
+    if (pasos_totales > 0) {
+        int *primer_paso = procesoObtenerPaso(&datos->proceso, 0);
+        if (primer_paso) {
+            memcpy(datos->arreglo.datos, primer_paso, sizeof(int) * datos->arreglo.tam);
+            gtk_widget_queue_draw(datos->drawing_area);
+        }
+    }
+    
+    g_print("Listo para reproducir. Paso 1/%d. Usa los botones de control.\n", 
+            datos->pasosTotales);
+}
+
+// Botón Anterior
+static void onAnterior(GtkButton *btn, gpointer user_data) {
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+    
+    if (datos->pasoActual > 0) {
+        datos->pasoActual--;
+        int *paso = procesoObtenerPaso(&datos->proceso, datos->pasoActual);
+        if (paso) {
+            memcpy(datos->arreglo.datos, paso, sizeof(int) * datos->arreglo.tam);
+            gtk_widget_queue_draw(datos->drawing_area);
+            g_print("Paso %d/%d\n", datos->pasoActual + 1, datos->pasosTotales);
+        }
+    } else {
+        g_print("Ya estás en el primer paso\n");
+    }
+}
+
+// Botón Siguiente
+static void onSig(GtkButton *btn, gpointer user_data) {
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+    
+    if (datos->pasoActual < datos->pasosTotales - 1) {
+        datos->pasoActual++;
+        int *paso = procesoObtenerPaso(&datos->proceso, datos->pasoActual);
+        if (paso) {
+            memcpy(datos->arreglo.datos, paso, sizeof(int) * datos->arreglo.tam);
+            gtk_widget_queue_draw(datos->drawing_area);
+            g_print("Paso %d/%d\n", datos->pasoActual + 1, datos->pasosTotales);
+        }
+    } else {
+        g_print("Ya estás en el último paso (ordenamiento completo)\n");
+    }
+}
+
+// Función de timer para reproducción automática
+static gboolean reproducir_paso(gpointer user_data) {
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+    
+    if (!datos->reproduciendo) {
+        return FALSE;  // Detener timer
+    }
+    
+    if (datos->pasoActual < datos->pasosTotales - 1) {
+        datos->pasoActual++;
+        int *paso = procesoObtenerPaso(&datos->proceso, datos->pasoActual);
+        if (paso) {
+            memcpy(datos->arreglo.datos, paso, sizeof(int) * datos->arreglo.tam);
+            gtk_widget_queue_draw(datos->drawing_area);
+            g_print("Paso %d/%d\n", datos->pasoActual + 1, datos->pasosTotales);
+        }
+        return TRUE;  // Continuar reproducción
+    } else {
+        g_print("Reproducción completada\n");
+        datos->reproduciendo = FALSE;
+        datos->timer_id = 0;
+        return FALSE;  // Detener reproducción
+    }
+}
+
+// Botón Play
+static void onPlay(GtkButton *btn, gpointer user_data) {
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+    
+    if (datos->pasosTotales <= 1) {
+        g_print("No hay pasos para reproducir. Ejecuta un ordenamiento primero.\n");
+        return;
+    }
+    
+    if (datos->reproduciendo) {
+        g_print("Ya está reproduciendo\n");
+        return;
+    }
+    
+    // Si estamos en el último paso, reiniciar
+    if (datos->pasoActual >= datos->pasosTotales - 1) {
+        datos->pasoActual = 0;
+        int *paso = procesoObtenerPaso(&datos->proceso, 0);
+        if (paso) {
+            memcpy(datos->arreglo.datos, paso, sizeof(int) * datos->arreglo.tam);
+            gtk_widget_queue_draw(datos->drawing_area);
+        }
+    }
+    
+    g_print("Iniciando reproducción...\n");
+    datos->reproduciendo = TRUE;
+    datos->timer_id = g_timeout_add(500, reproducir_paso, datos);  // 500ms por paso
+}
+
+// Botón Pausa
+static void onPausa(GtkButton *btn, gpointer user_data) {
+    DatosProyecto *datos = (DatosProyecto*)user_data;
+    
+    if (datos->reproduciendo) {
+        datos->reproduciendo = FALSE;
+        if (datos->timer_id > 0) {
+            g_source_remove(datos->timer_id);
+            datos->timer_id = 0;
+        }
+        g_print("Pausado en paso %d/%d\n", datos->pasoActual + 1, datos->pasosTotales);
+    } else {
+        g_print("No hay reproducción activa\n");
+    }
+}
+
 // Crear la interfaz gráfica
 GtkWidget* crearInterfaz(GtkApplication *app)
 {
     DatosProyecto *datos = g_malloc0(sizeof(DatosProyecto));
+    datos->reproduciendo = FALSE;
+    datos->timer_id = 0;
 
     GtkWidget *window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "Algoritmos de Ordenamiento");
@@ -173,6 +327,9 @@ GtkWidget* crearInterfaz(GtkApplication *app)
     GtkWidget *btn_cargar = gtk_button_new_with_label("Cargar Lista");
     gtk_box_append(GTK_BOX(hbox_input), btn_cargar);
 
+    GtkWidget *btn_ordenar = gtk_button_new_with_label("Ordenar");
+    gtk_box_append(GTK_BOX(hbox_input), btn_ordenar);
+
     GtkWidget *combo = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Burbuja");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Selección");
@@ -184,22 +341,21 @@ GtkWidget* crearInterfaz(GtkApplication *app)
     gtk_widget_set_size_request(frame, 600, 400);
     gtk_box_append(GTK_BOX(vbox), frame);
 
-
     // Botones o controles de reproducción
     GtkWidget *hbox_controles = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_box_append(GTK_BOX(vbox), hbox_controles);
 
-    GtkWidget *btnAnterior = gtk_button_new_with_label("Anterior");
-    GtkWidget *btnPausa    = gtk_button_new_with_label("Pausa");
-    GtkWidget *btnPlay     = gtk_button_new_with_label("Reproducir");
-    GtkWidget *btnSig = gtk_button_new_with_label("Siguiente");
+    GtkWidget *btnAnterior = gtk_button_new_with_label("◀ Anterior");
+    GtkWidget *btnPausa    = gtk_button_new_with_label("⏸ Pausa");
+    GtkWidget *btnPlay     = gtk_button_new_with_label("▶ Reproducir");
+    GtkWidget *btnSig = gtk_button_new_with_label("Siguiente ▶");
 
     gtk_box_append(GTK_BOX(hbox_controles), btnAnterior);
     gtk_box_append(GTK_BOX(hbox_controles), btnPausa);
     gtk_box_append(GTK_BOX(hbox_controles), btnPlay);
     gtk_box_append(GTK_BOX(hbox_controles), btnSig);
 
-    // Callbacks vacíos por ahora (solo para compilar)
+    // Conectar callbacks
     g_signal_connect(btnAnterior, "clicked", G_CALLBACK(onAnterior), datos);
     g_signal_connect(btnPausa, "clicked", G_CALLBACK(onPausa), datos);
     g_signal_connect(btnPlay, "clicked", G_CALLBACK(onPlay), datos);
@@ -218,6 +374,7 @@ GtkWidget* crearInterfaz(GtkApplication *app)
     datos->drawing_area = drawing_area;
 
     g_signal_connect(btn_cargar, "clicked", G_CALLBACK(cargarLista), datos);
+    g_signal_connect(btn_ordenar, "clicked", G_CALLBACK(ejecutarOrdenamiento), datos);
 
     return window;
 }

@@ -3,6 +3,7 @@
 ; como si fueran burbujas que "suben". Este proceso se repite a través de la lista hasta que no se necesiten más intercambios, 
 ; lo que indica que la lista está completamente ordenada
 
+section .note.GNU-stack noalloc noexec nowrite progbits
 
 section .data
     ; No es necesario
