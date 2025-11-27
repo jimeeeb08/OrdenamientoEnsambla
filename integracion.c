@@ -5,6 +5,7 @@
 extern int asm_burbuja(int *arr, int n, int *buffer);
 extern int asm_seleccion(int *arr, int n, int *buffer);
 
+
 int burbujaOrd(int *arreglo, int n, int **salidaBuffer, int *pasosTotal) {
 
     // Capacidad estimada: En el peor caso va a durar n*(n-1)/2 pasos
@@ -12,6 +13,7 @@ int burbujaOrd(int *arreglo, int n, int **salidaBuffer, int *pasosTotal) {
     int *buffer = malloc(sizeof(int) * n * max_pasos);
 
     int pasos = asm_burbuja(arreglo, n, buffer);
+    
 
     *salidaBuffer = buffer; // Asignar el buffer al puntero de salida
     *pasosTotal = pasos; // Asignar la cantidad de pasos al puntero de salida

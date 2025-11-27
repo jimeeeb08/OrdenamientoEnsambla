@@ -21,9 +21,9 @@ GTK_CFLAGS = `pkg-config --cflags gtk4`
 GTK_LIBS = `pkg-config --libs gtk4`
 
 # Flags de compilación
-CFLAGS = -Wall -g $(GTK_CFLAGS)
+CFLAGS = -Wall -Wno-deprecated-declarations -g $(GTK_CFLAGS)
 NASMFLAGS = -f elf64 -g -F dwarf
-
+.SILENT:
 # Regla por defecto
 all: $(TARGET)
 
@@ -50,7 +50,6 @@ mrproper: clean
 # Regla para ejecutar el programa
 run: $(TARGET)
 	./$(TARGET)
-
 
 # Prevenir que Make trate estos nombres como archivos
 .PHONY: all clean mrproper run
