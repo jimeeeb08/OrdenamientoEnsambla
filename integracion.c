@@ -8,9 +8,9 @@ extern int asm_seleccion(int *arr, int n, int *buffer);
 
 int burbujaOrd(int *arreglo, int n, int **salidaBuffer, int *pasosTotal) {
 
-    // Capacidad estimada: En el peor caso va a durar n*(n-1)/2 pasos
-    int max_pasos = n * (n - 1) / 2 + 1;
-    int *buffer = malloc(sizeof(int) * n * max_pasos);
+    // Capacidad estimada: En el peor caso va a durar n*(n-1)/2 pasos, característica de bubble sort
+    int max_pasos = n * (n - 1) / 2 + 1; // Se calucla el numero total de iteraciones en el peor de los casos y se le suma 1
+    int *buffer = malloc(sizeof(int) * n * max_pasos); // Se reserva memoria para el buffer
 
     int pasos = asm_burbuja(arreglo, n, buffer);
     
