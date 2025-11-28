@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "integracion.h"
 
-// Declaraciones de funciones en ASM (por ahora están vacías ya que no se ha implementado nada)
+// Declaraciones de funciones en ASM 
 extern int asm_burbuja(int *arr, int n, int *buffer);
 extern int asm_seleccion(int *arr, int n, int *buffer);
 
